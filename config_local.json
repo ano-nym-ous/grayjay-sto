@@ -1,0 +1,73 @@
+{
+  "name": "s.to",
+  "description": "Plugin for SerienStream (s.to / serienstream.to) and AniWorld (aniworld.to). Browse series, seasons and movies, and play episodes from every available hoster and language.",
+  "author": "ano-nym-ous",
+  "authorUrl": "https://github.com/ano-nym-ous",
+  "platformUrl": "https://s.to",
+  "sourceUrl": "http://localhost:3000/config_local.json",
+  "repositoryUrl": "http://localhost:3000",
+  "scriptUrl": "./dist/script.js",
+  "version": 1,
+  "iconUrl": "./icon.png",
+  "id": "984f2a8e-bd06-4d2b-84c7-db37f786672b",
+  "packages": ["Http", "DOMParser"],
+  "allowEval": false,
+  "allowUrls": [
+    "s.to",
+    "serienstream.to",
+    "aniworld.to",
+    "186.2.175.5",
+    "voe.sx",
+    "voe-network.net",
+    "voe-unblock.com",
+    "voeunblock.com",
+    "voeunbl0ck.com",
+    "streamtape.com",
+    "streamtape.to",
+    "streamtape.net",
+    "streamtape.xyz",
+    "streamta.pe",
+    "tapecontent.net",
+    "streamtapeadblock.art",
+    "dood.li",
+    "dood.to",
+    "dood.so",
+    "dood.ws",
+    "dood.watch",
+    "dood.pm",
+    "dood.re",
+    "dood.yt",
+    "doods.pro",
+    "ds2play.com",
+    "dooood.com",
+    "d0000d.com",
+    "d000d.com",
+    "all3do.com",
+    "vidoza.net",
+    "videzz.net",
+"everywhere"
+  ],
+  "settings": [
+    {
+      "variable": "site",
+      "name": "Site type",
+      "description": "Which catalogue to browse. 'serie' = SerienStream (s.to / serienstream.to), 'anime' = AniWorld. This must match the Base URL below.",
+      "type": "Dropdown",
+      "options": ["serie", "anime"],
+      "default": "0"
+    },
+    {
+      "variable": "baseUrl",
+      "name": "Base URL",
+      "description": "The site domain to use. Pick a SerienStream domain together with 'serie', or aniworld.to together with 'anime'. Switch to a mirror here if the default domain is unavailable.",
+      "type": "Dropdown",
+      "options": [
+        "https://s.to",
+        "https://serienstream.to",
+        "https://aniworld.to",
+        "http://186.2.175.5"
+      ],
+      "default": "1"
+    }
+  ]
+}

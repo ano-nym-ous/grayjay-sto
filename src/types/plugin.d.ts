@@ -1,0 +1,450 @@
+//Reference Scriptfile
+//Intended exclusively for auto-complete in your IDE, not for execution
+
+declare class ScriptException extends Error {
+    constructor(msg: string);
+}
+declare class TimeoutException extends ScriptException {
+    constructor(msg: string);
+}
+
+declare class Thumbnails {
+    constructor(thumbnails: Thumbnail[])
+}
+declare class Thumbnail {
+    constructor(url, quality?) {
+        this.url = url ?? ""; //string
+        this.quality = quality ?? 0; //integer
+    }
+}
+
+declare class PlatformID {
+    constructor(platform: string, id: string, pluginId: string);
+}
+
+declare class ResultCapabilities {
+    constructor(types: string[], sorts: string[], filters: FilterGroup[])
+}
+declare class FilterGroup {
+    constructor(name: string, filters: string[], isMultiSelect: boolean, id: string);
+}
+declare class FilterCapability {
+    constructor(name: string, value: string, id: string);
+}
+
+
+declare class PlatformAuthorLink {
+    constructor(id: PlatformID, name: string, url: string, thumbnail?: string, subscribers?: integer);
+}
+
+declare interface PlatformVideoDef {
+    id: PlatformID,
+    name: string,
+    thumbnails: Thumbnails,
+    author: PlatformAuthorLink,
+    uploadDate: integer,
+    url: string,
+
+    duration: int,
+    viewCount: long,
+    isLive: boolean
+}
+
+declare interface PlatformVideo extends PlatformVideoDef {}
+declare class PlatformVideo {
+    constructor(obj: PlatformVideoDef);
+}
+
+
+declare interface PlatformVideoDetailsDef extends PlatformVideoDef {
+    description: string,
+    video: VideoSourceDescriptor,
+    dash: DashSource?,
+    hls: HLSSource?,
+    live: SubtitleSource[] | null
+}
+declare interface PlatformVideoDetails extends PlatformVideoDetailsDef {}
+declare class PlatformVideoDetails extends PlatformVideo {
+    constructor(obj: PlatformVideoDetailsDef);
+}
+
+//Sources
+declare interface IVideoSourceDescriptor {}
+
+declare interface MuxVideoSourceDescriptorDef {
+    isUnMuxed: boolean,
+    videoSources: VideoSource[]
+}
+declare class MuxVideoSourceDescriptor implements IVideoSourceDescriptor {
+    constructor(obj: VideoSourceDescriptorDef);
+}
+
+declare interface UnMuxVideoSourceDescriptorDef {
+    isUnMuxed: boolean,
+    videoSources: VideoSource[]
+}
+class UnMuxVideoSourceDescriptor implements IVideoSourceDescriptor {
+    constructor(videoSourcesOrObj: VideoSource[], audioSources: AudioSource[]);
+    constructor(videoSourcesOrObj: UnMuxVideoSourceDescriptorDef);
+}
+
+declare interface IVideoSource {
+
+}
+declare interface IAudioSource {
+
+}
+interface VideoUrlSourceDef implements IVideoSource {
+    width: integer,
+    height: integer,
+    container: string,
+    codec: string,
+    name: string,
+    bitrate: integer,
+    duration: integer,
+    url: string
+}
+class VideoUrlSource {
+    constructor(obj: VideoUrlSourceDef);
+}
+interface YTVideoSourceDef extends VideoUrlSource {
+    itagId: integer,
+    initStart: integer,
+    initEnd: integer,
+    indexStart: integer,
+    indexEnd: integer,
+}
+class YTVideoSource extends VideoUrlSource {
+    constructor(obj: YTVideoSourceDef);
+}
+interface AudioUrlSourceDef {
+    name: string,
+    bitrate: integer,
+    container: string,
+    codecs: string,
+    duration: integer,
+    url: string,
+    language: string
+}
+class AudioUrlSource implements IAudioSource {
+    constructor(obj: AudioUrlSourceDef);
+}
+interface YTAudioSourceDef extends AudioUrlSource {
+    itagId: integer,
+    initStart: integer,
+    initEnd: integer,
+    indexStart: integer,
+    indexEnd: integer,
+    audioChannels: integer
+}
+class YTAudioSource extends AudioUrlSource {
+    constructor(obj: YTAudioSourceDef);
+}
+interface HLSSourceDef {
+    name: string,
+    duration: integer,
+    url: string,
+    language: string
+}
+class HLSSource implements IVideoSource {
+    constructor(obj: HLSSourceDef);
+}
+interface DashSourceDef {
+    name: string,
+    duration: integer,
+    url: string
+}
+class DashSource implements IVideoSource {
+    constructor(obj: DashSourceDef)
+}
+
+declare class VideoSourceDescriptor {
+  constructor(sources: VideoSource[]);
+}
+
+//Channel
+interface PlatformChannelDef {
+    id: PlatformID,
+    name: string,
+    thumbnail: string,
+    banner: string,
+    subscribers: integer,
+    description: string,
+    url: string,
+    links: Map<string>?
+}
+class PlatformChannel {
+    constructor(obj: PlatformChannelDef);
+}
+
+//Ratings
+interface IRating {
+    type: integer
+}
+declare class RatingLikes implements IRating {
+    constructor(likes: integer);
+}
+declare class RatingLikesDislikes implements IRating {
+    constructor(likes: integer, dislikes: integer);
+}
+declare class RatingScaler implements IRating {
+    constructor(value: double);
+}
+
+declare interface CommentDef {
+    contextUrl: string,
+    author: PlatformAuthorLink,
+    message: string,
+    rating: IRating,
+    date: long,
+    replyCount: int,
+    context: any
+}
+declare class Comment {
+    constructor(obj: CommentDef);
+}
+
+
+
+declare class LiveEventPager {
+    nextRequest = 4000;
+
+    constructor(results: LiveEvent[], hasMore: boolean, context: any);
+
+    hasMorePagers(): boolean
+    nextPage(): LiveEventPager; //Could be self
+}
+
+class LiveEvent {
+    type: String
+}
+declare class LiveEventComment extends ILiveEvent {
+    constructor(name: string, message: string, thumbnail: string?);
+}
+declare class LiveEventDonation extends ILiveEvent  {
+    constructor(amount: integer, name: string, message: string, thumbnail: string?);
+}
+declare class LiveEventViewCount extends ILiveEvent {
+    constructor(viewCount: integer);
+}
+declare class LiveEventRaid extends ILiveEvent {
+    constructor(targetUrl: string, targetName: string, targetThumbnail: string);
+}
+
+
+
+//Pagers
+declare class VideoPager {
+    constructor(results: PlatformVideo[], hasMore: boolean, context: any);
+
+    hasMorePagers(): boolean
+    nextPage(): VideoPager; //Could be self
+}
+declare class ChannelPager {
+    constructor(results: PlatformVideo[], hasMore: boolean, context: any);
+
+    hasMorePagers(): boolean;
+    nextPage(): ChannelPager; //Could be self
+}
+declare class CommentPager {
+    constructor(results: PlatformVideo[], hasMore: boolean, context: any);
+
+    hasMorePagers(): boolean
+    nextPage(): CommentPager; //Could be self
+}
+
+interface Map<T> {
+    [Key: string]: T;
+}
+
+//To override by plugin
+
+interface Source {
+    getHome(): VideoPager;
+    getContentDetails(url: string): PlatformVideoDetails;
+    isContentDetailsUrl(url: string): boolean
+    setSettings(settings: SourceSettings);
+
+    enable(config: SourceConfig, settings: SourceSettings);
+    reEnable(config: SourceConfig, settings: SourceSettings);
+
+    disable();
+
+    searchSuggestions(query: string): string[];
+    search(query: string, type: string, order: string, filters): VideoPager;
+    getSearchCapabilities(): ResultCapabilities
+
+    //Optional
+    searchChannelVideos(channelUrl: string, query: string, type: string, order: string, filters): VideoPager;
+    //Optional
+    getSearchChannelVideoCapabilities(): ResultCapabilities;
+
+    isChannelUrl(url: string): boolean;
+    getChannel(url: string): PlatformChannel;
+
+    getChannelVideos(url: string, type: string, order: string, filters): VideoPager;
+    getChannelCapabilities(): ResultCapabilities;
+
+    isVideoDetailsUrl(url: string): boolean;
+    getVideoDetails(url: string): PlatformVideoDetails;
+
+    //Optional
+    getComments(url: string): CommentPager;
+    //Optional
+    getSubComments(comment: Comment): CommentPager;
+
+    //Optional
+    getUserSubscriptions(): string[];
+    //Optional
+    getUserPlaylists(): string[];
+
+    //Optional
+    isPlaylistUrl(url: string): boolean;
+    //Optional
+    getPlaylist(url): string[]?;
+}
+
+const source: Source;
+
+
+// http client
+interface HttpHeaders {
+  [key: string]: string;
+}
+
+declare class BridgeHttpResponse {
+  url: string;
+  code: number;
+  headers: HttpHeaders;
+  body: string;
+  isOk: boolean;
+}
+
+declare class BatchBuilder {
+  GET(url: String, headers: Map<String, String>, useAuthClient: Boolean): BatchBuilder;
+  POST(url: String, body: String, headers: Map<String, String>, useAuthClient: Boolean): BatchBuilder;
+  request(method: String, url: String, headers: Map<String, String>, useAuthClient: Boolean): BatchBuilder;
+  requestWithBody(method: String, url: String, body: String, headers: Map<String, String>, useAuthClient: Boolean): BatchBuilder;
+  execute(): BridgeHttpResponse[];
+}
+
+declare class Http {
+  GET(url: String, headers: Map<String, String>, useAuthClient: Boolean): BridgeHttpResponse;
+  POST(url: String, body: String, headers: Map<String, String>, useAuthClient: Boolean): BridgeHttpResponse;
+  request(method: String, url: String, headers: Map<String, String>, useAuthClient: Boolean): BridgeHttpResponse;
+  requestWithBody(method: String, url: String, body: String, headers: Map<String, String>, useAuthClient: Boolean): BridgeHttpResponse;
+  batch(): BatchBuilder;
+}
+
+const http: Http;
+
+// logger
+declare function log(message: string): void;
+
+// DOMparser
+declare class DOMNode {
+  // @V8Property members — accessed as plain properties, not called
+  readonly nodeType: string;
+  readonly tagName: string;              // uppercased, per _element.tagName().uppercase()
+  readonly childNodes: DOMNode[];
+  readonly firstChild: DOMNode | null;
+  readonly lastChild: DOMNode | null;
+  readonly parentNode: DOMNode | null;
+  readonly parentElement: DOMNode | null;
+  readonly attributes: Record<string, string>;
+  readonly innerHTML: string;
+  readonly outerHTML: string;
+  readonly textContent: string;
+  readonly text: string;                  // falls back to `data` if empty
+  readonly data: string;
+  readonly classList: string[];
+  readonly className: string;
+
+  // @V8Function members — called with arguments
+  getAttribute(key: string): string;
+  getElementById(id: string): DOMNode | null;
+  getElementsByClassName(className: string): DOMNode[];
+  getElementsByTagName(tagName: string): DOMNode[];
+  getElementsByName(name: string): DOMNode[];
+  querySelector(query: string): DOMNode | null;
+  querySelectorAll(query: string): DOMNode[];
+}
+
+declare class DOMParserPackage {
+  parseFromString(html: string): DOMNode;
+}
+
+declare const domParser: DOMParserPackage;
+
+// ---------------------------------------------------------------------------
+// Additional declarations used by this plugin that are missing from the
+// reference plugin.d.ts above.
+// ---------------------------------------------------------------------------
+
+type VideoSource = IVideoSource;
+
+// Optional per-source request customization (e.g. Referer headers required by
+// some hosters at playback time).
+interface RequestModifier {
+    headers?: { [key: string]: string };
+    useByteRangeRequest?: boolean;
+}
+
+interface VideoUrlSourceDef {
+    // Grayjay's runtime accepts sources without codec/bitrate (see the official
+    // PeerTube plugin), so relax the reference declaration here.
+    codec?: string;
+    bitrate?: integer;
+    requestModifier?: RequestModifier;
+}
+interface HLSSourceDef {
+    requestModifier?: RequestModifier;
+}
+
+// Subtitles (unused for now — hoster subs are baked into the stream — but
+// declared for completeness).
+interface SubtitleSourceDef {
+    name: string;
+    url?: string;
+    hasFetch?: boolean;
+    format?: string;
+}
+declare class SubtitleSource {
+    constructor(obj: SubtitleSourceDef);
+}
+
+// Playlists ----------------------------------------------------------------
+interface PlatformPlaylistDef {
+    id: PlatformID;
+    name: string;
+    thumbnail?: string;
+    author: PlatformAuthorLink;
+    datetime?: integer;
+    url: string;
+    videoCount: integer;
+}
+declare class PlatformPlaylist {
+    constructor(obj: PlatformPlaylistDef);
+}
+
+interface PlatformPlaylistDetailsDef extends PlatformPlaylistDef {
+    contents: VideoPager;
+}
+declare class PlatformPlaylistDetails {
+    constructor(obj: PlatformPlaylistDetailsDef);
+}
+
+declare class PlaylistPager {
+    constructor(results: PlatformPlaylist[], hasMore: boolean, context: any);
+    hasMorePagers(): boolean;
+    nextPage(): PlaylistPager;
+}
+
+interface Source {
+    // Search
+    searchChannels(query: string): ChannelPager;
+
+    // Channels
+    getChannelContents(url: string, type: string, order: string, filters: any): VideoPager;
+    getChannelPlaylists(url: string): PlaylistPager;
+}
