@@ -17,8 +17,8 @@ export const BASE_URL_OPTIONS = [
 // Browser-like user agent. The site returns different / blocked markup for
 // unknown agents, so we mirror what the reference C# client sends.
 export const USER_AGENT =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
+    "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36";
 
 // Characters stripped when turning a human title into a URL slug.
 // Mirrors `Extensions.ToRelativePath` from the C# reference.

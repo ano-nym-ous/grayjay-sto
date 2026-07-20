@@ -10,7 +10,7 @@
     "https://aniworld.to",
     "http://186.2.175.5"
   ];
-  var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+  var USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36";
   var HOSTER_ORDER = ["VOE", "Vidoza", "Streamtape", "Doodstream"];
   var DOODSTREAM_HOST = "https://dood.li";
 
@@ -87,24 +87,72 @@
     }
     return false;
   }
-  function fetchAndValidate(url, headers) {
-    const response = http.GET(
-      url,
-      { ...DEFAULT_HEADERS, ...headers || {} },
-      false
+  function isRedirectGate(body) {
+    if (!body) return false;
+    return body.indexOf("frameBridge") !== -1 && body.indexOf("postMessage") !== -1;
+  }
+  function isCaptchaException(e) {
+    return !!e && typeof e === "object" && e.plugin_type === "CaptchaRequiredException";
+  }
+  function findMetaRefreshUrl(body) {
+    if (!body) return null;
+    const match = body.match(
+      /<meta[^>]*http-equiv=["']?refresh["']?[^>]*content=["'][^"']*?url=['"]?([^'"\s>]+)/i
     );
-    if (!response.isOk) {
-      if (isCloudflareChallenge(response.body)) {
-        throw new CaptchaRequiredException(url, response.body);
+    if (!match) return null;
+    return match[1].replace(/&amp;/g, "&").replace(/['"]+$/, "");
+  }
+  function findLocationHeader(headers) {
+    if (!headers) return null;
+    for (const key in headers) {
+      if (key.toLowerCase() === "location") {
+        const value = headers[key];
+        return value ? String(value) : null;
       }
-      throw new ScriptException(
-        `Request failed (${response.code}): ${url}`
+    }
+    return null;
+  }
+  function fetchAndValidate(url, headers) {
+    let currentUrl = url;
+    for (let hop = 0; hop < 5; hop++) {
+      const response = http.GET(
+        currentUrl,
+        { ...DEFAULT_HEADERS, ...headers || {} },
+        false
       );
+      const cf = isCloudflareChallenge(response.body);
+      const gate = isRedirectGate(response.body);
+      const bodyLen = response.body ? response.body.length : 0;
+      log(
+        `s.to fetch ${currentUrl} -> code=${response.code} isOk=${response.isOk} len=${bodyLen} cloudflareChallenge=${cf} redirectGate=${gate}`
+      );
+      if (!response.isOk) {
+        if (cf) {
+          log(`s.to: Cloudflare challenge on non-2xx (${response.code}); throwing CaptchaRequiredException for ${currentUrl}`);
+          throw new CaptchaRequiredException(currentUrl, response.body);
+        }
+        log(`s.to: request failed body snippet: ${(response.body || "").slice(0, 300)}`);
+        throw new ScriptException(
+          `Request failed (${response.code}): ${currentUrl}`
+        );
+      }
+      if (cf) {
+        log(`s.to: Cloudflare challenge on 200; throwing CaptchaRequiredException for ${currentUrl}`);
+        throw new CaptchaRequiredException(currentUrl, response.body);
+      }
+      if (gate) {
+        log(`s.to: Turnstile redirect gate detected for ${currentUrl}; throwing CaptchaRequiredException`);
+        throw new CaptchaRequiredException(currentUrl);
+      }
+      const nextUrl = findMetaRefreshUrl(response.body) || findLocationHeader(response.headers);
+      if (nextUrl && nextUrl !== currentUrl) {
+        log(`s.to: following redirect ${currentUrl} -> ${nextUrl}`);
+        currentUrl = nextUrl;
+        continue;
+      }
+      return response.body;
     }
-    if (isCloudflareChallenge(response.body)) {
-      throw new CaptchaRequiredException(url, response.body);
-    }
-    return response.body;
+    throw new ScriptException(`Too many redirects starting at: ${url}`);
   }
   function getHtmlRoot(path) {
     const webContent = fetchAndValidate(absoluteUrl(path));
@@ -827,6 +875,10 @@
         log(`s.to: resolved ${stream.hoster} -> ${resolved.type} ${resolved.url}`);
         sources.push(buildSource(stream, resolved));
       } catch (e) {
+        if (isCaptchaException(e)) {
+          log(`s.to: redirect gate / captcha required; opening captcha webview at ${url}`);
+          throw new CaptchaRequiredException(url);
+        }
         const msg = `${stream.hoster}: ${e}`;
         errors.push(msg);
         log(`s.to: failed to resolve ${msg}`);

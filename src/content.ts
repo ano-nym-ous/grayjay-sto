@@ -3,7 +3,7 @@
 
 import { HOSTER_ORDER, PLATFORM } from "./constants";
 import { getConfig } from "./state";
-import { titleFromSlug } from "./helpers";
+import { titleFromSlug, isCaptchaException } from "./helpers";
 import { getEpisodeVideoInfo, getSeries, type EpisodeStream } from "./series";
 import { resolveStream, type ResolvedStream } from "./extractors";
 import {
@@ -94,6 +94,20 @@ export function getContentDetails(url: string): PlatformVideoDetails {
             log(`s.to: resolved ${stream.hoster} -> ${resolved.type} ${resolved.url}`);
             sources.push(buildSource(stream, resolved));
         } catch (e) {
+            // A Cloudflare challenge must NOT be swallowed like an ordinary
+            // dead-hoster failure: it has to propagate out of the source method
+            // so Grayjay opens its captcha webview and retries with the
+            // resulting `cf_clearance` cookie. Swallowing it here is what made
+            // the captcha support appear to "not work" on-device.
+            if (isCaptchaException(e)) {
+                // Re-throw pointing at the EPISODE page (not the dead-end
+                // `/r?t=` stub): Grayjay opens it in the captcha webview where
+                // the s.to Turnstile redirect gate can actually be solved. The
+                // resulting cleared `laravel_session` cookie is then injected
+                // into plugin requests, after which `/r?t=` resolves normally.
+                log(`s.to: redirect gate / captcha required; opening captcha webview at ${url}`);
+                throw new CaptchaRequiredException(url);
+            }
             const msg = `${stream.hoster}: ${e}`;
             errors.push(msg);
             log(`s.to: failed to resolve ${msg}`);
