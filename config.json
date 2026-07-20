@@ -7,7 +7,7 @@
   "sourceUrl": "https://raw.githubusercontent.com/ano-nym-ous/grayjay-sto/refs/heads/main/config.json",
   "repositoryUrl": "https://raw.githubusercontent.com/ano-nym-ous/grayjay-sto",
   "scriptUrl": "./dist/script.js",
-  "version": 1,
+  "version": 2,
   "iconUrl": "./icon.png",
   "id": "984f2a8e-bd06-4d2b-84c7-db37f786672b",
   "packages": ["Http", "DOMParser"],
@@ -32,10 +32,16 @@
       "options": [
         "https://s.to",
         "https://serienstream.to",
+        "https://serienstream.cx",
         "https://aniworld.to",
         "http://186.2.175.5"
       ],
-      "default": "0"
+      "default": "1"
     }
-  ]
+  ],
+  "captcha": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "captchaUrl": null,
+    "cookiesToFind": ["cf_clearance"]
+  }
 }

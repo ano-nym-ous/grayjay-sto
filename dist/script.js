@@ -6,6 +6,7 @@
   var BASE_URL_OPTIONS = [
     "https://s.to",
     "https://serienstream.to",
+    "https://serienstream.cx",
     "https://aniworld.to",
     "http://186.2.175.5"
   ];
@@ -70,6 +71,22 @@
   var DEFAULT_HEADERS = {
     "User-Agent": USER_AGENT
   };
+  var CLOUDFLARE_MARKERS = [
+    "Just a moment",
+    "challenge-platform",
+    "_cf_chl_opt",
+    "__cf_chl",
+    "cf-browser-verification",
+    "challenges.cloudflare.com",
+    "Enable JavaScript and cookies to continue"
+  ];
+  function isCloudflareChallenge(body) {
+    if (!body) return false;
+    for (const marker of CLOUDFLARE_MARKERS) {
+      if (body.indexOf(marker) !== -1) return true;
+    }
+    return false;
+  }
   function fetchAndValidate(url, headers) {
     const response = http.GET(
       url,
@@ -77,9 +94,15 @@
       false
     );
     if (!response.isOk) {
+      if (isCloudflareChallenge(response.body)) {
+        throw new CaptchaRequiredException(url, response.body);
+      }
       throw new ScriptException(
         `Request failed (${response.code}): ${url}`
       );
+    }
+    if (isCloudflareChallenge(response.body)) {
+      throw new CaptchaRequiredException(url, response.body);
     }
     return response.body;
   }

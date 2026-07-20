@@ -7,6 +7,12 @@ declare class ScriptException extends Error {
 declare class TimeoutException extends ScriptException {
     constructor(msg: string);
 }
+// Throwing this during a source method makes Grayjay open a captcha-solving
+// webview at `url` (or render `body` HTML). After the user solves it, Grayjay
+// stores the resulting cookies and retries the request with them applied.
+declare class CaptchaRequiredException extends Error {
+    constructor(url?: string, body?: string);
+}
 
 declare class Thumbnails {
     constructor(thumbnails: Thumbnail[])

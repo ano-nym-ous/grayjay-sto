@@ -13,39 +13,7 @@
   "packages": ["Http", "DOMParser"],
   "allowEval": false,
   "allowUrls": [
-    "s.to",
-    "serienstream.to",
-    "aniworld.to",
-    "186.2.175.5",
-    "voe.sx",
-    "voe-network.net",
-    "voe-unblock.com",
-    "voeunblock.com",
-    "voeunbl0ck.com",
-    "streamtape.com",
-    "streamtape.to",
-    "streamtape.net",
-    "streamtape.xyz",
-    "streamta.pe",
-    "tapecontent.net",
-    "streamtapeadblock.art",
-    "dood.li",
-    "dood.to",
-    "dood.so",
-    "dood.ws",
-    "dood.watch",
-    "dood.pm",
-    "dood.re",
-    "dood.yt",
-    "doods.pro",
-    "ds2play.com",
-    "dooood.com",
-    "d0000d.com",
-    "d000d.com",
-    "all3do.com",
-    "vidoza.net",
-    "videzz.net",
-"everywhere"
+    "everywhere"
   ],
   "settings": [
     {
@@ -64,6 +32,7 @@
       "options": [
         "https://s.to",
         "https://serienstream.to",
+        "https://serienstream.cx",
         "https://aniworld.to",
         "http://186.2.175.5"
       ],

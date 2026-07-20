@@ -53,7 +53,32 @@ export const DEFAULT_HEADERS: Record<string, string> = {
     "User-Agent": USER_AGENT,
 };
 
+// Markers that identify a Cloudflare "managed challenge" interstitial (the
+// "click the box" / "Just a moment" page). These appear in the raw HTML body
+// regardless of the mobile vs. desktop DOM parser, so we string-match instead
+// of parsing. When present we hand control to Grayjay's captcha webview.
+const CLOUDFLARE_MARKERS = [
+    "Just a moment",
+    "challenge-platform",
+    "_cf_chl_opt",
+    "__cf_chl",
+    "cf-browser-verification",
+    "challenges.cloudflare.com",
+    "Enable JavaScript and cookies to continue",
+];
+
+function isCloudflareChallenge(body: string | undefined): boolean {
+    if (!body) return false;
+    for (const marker of CLOUDFLARE_MARKERS) {
+        if (body.indexOf(marker) !== -1) return true;
+    }
+    return false;
+}
+
 // GET a URL and throw on a non-2xx response, returning the raw body.
+// If Cloudflare throws a managed challenge, raise a CaptchaRequiredException so
+// Grayjay opens the captcha webview; after the user solves it, the resulting
+// `cf_clearance` cookie is auto-injected into subsequent requests on retry.
 export function fetchAndValidate(
     url: string,
     headers?: Record<string, string>,
@@ -64,9 +89,16 @@ export function fetchAndValidate(
         false,
     );
     if (!response.isOk) {
+        if (isCloudflareChallenge(response.body)) {
+            throw new CaptchaRequiredException(url, response.body);
+        }
         throw new ScriptException(
             `Request failed (${response.code}): ${url}`,
         );
+    }
+    // Cloudflare sometimes serves the challenge with a 200 status code.
+    if (isCloudflareChallenge(response.body)) {
+        throw new CaptchaRequiredException(url, response.body);
     }
     return response.body;
 }

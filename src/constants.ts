@@ -9,6 +9,7 @@ export const SITE_OPTIONS = ["serie", "anime"] as const;
 export const BASE_URL_OPTIONS = [
     "https://s.to",
     "https://serienstream.to",
+    "https://serienstream.cx",
     "https://aniworld.to",
     "http://186.2.175.5",
 ] as const;
