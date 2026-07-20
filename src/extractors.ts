@@ -160,6 +160,13 @@ function reverse(text: string): string {
 //   5. subtract 3 from every char code
 //   6. reverse the string, then base64-decode -> UTF-8
 //   7. JSON parse and read `.source`
+//
+// IMPORTANT: this runs entirely on the RAW fetched HTML string via regex.
+// Grayjay's desktop and mobile builds ship different HTML parsers, and the
+// mobile parser both mishandles attribute selectors like
+// `script[type="application/json"]` (returns null) and mangles the base64 blob
+// when re-serializing via `innerHTML`. Staying string-only keeps VOE working
+// identically on both platforms.
 export function getVoeStreamUrl(redirectUrl: string): ResolvedStream {
     let videoUrl = redirectUrl;
     let webContent = fetchAndValidate(videoUrl);
@@ -169,24 +176,19 @@ export function getVoeStreamUrl(redirectUrl: string): ResolvedStream {
     const redirectMatch = webContent.match(
         /window\.location\.href\s*=\s*'([^']*)'/,
     );
-    let root: DOMNode;
     if (redirectMatch) {
         videoUrl = redirectMatch[1];
-        root = getHtmlRootFromUrl(videoUrl);
-        webContent = root.innerHTML;
-    } else {
-        root = domParser
-            .parseFromString(webContent)
-            .getElementsByTagName("html")[0];
+        webContent = fetchAndValidate(videoUrl);
     }
 
-    // Primary: <script type="application/json"> obfuscated blob.
-    const scriptNode = root
-        ? root.querySelector('script[type="application/json"]')
-        : null;
-    if (scriptNode) {
+    // Primary: <script type="application/json">...</script> obfuscated blob.
+    // Match on the raw HTML (attribute order / quoting tolerant).
+    const scriptMatch = webContent.match(
+        /<script[^>]*type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/i,
+    );
+    if (scriptMatch) {
         try {
-            let encoded = (scriptNode.textContent || "").trim();
+            let encoded = scriptMatch[1].trim();
             if (encoded.length > 4) {
                 encoded = encoded.slice(2, encoded.length - 2);
             }
@@ -225,6 +227,15 @@ export function getVoeStreamUrl(redirectUrl: string): ResolvedStream {
     if (hls) {
         const url = base64DecodeToString(hls[1]);
         if (url) return { url, type: "hls" };
+    }
+
+    // Fallback 3: a plain `"source":"https://.../master.m3u8"` (or 'source')
+    // sometimes appears unobfuscated in the page JS.
+    const plainSource = webContent.match(
+        /["']source["']\s*:\s*["'](https?:\/\/[^"']+)["']/,
+    );
+    if (plainSource) {
+        return { url: plainSource[1], type: "hls" };
     }
 
     throw new ScriptException(`VOE stream extraction failed: ${videoUrl}`);
