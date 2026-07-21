@@ -3,7 +3,7 @@
 
 import { HOSTER_ORDER, PLATFORM } from "./constants";
 import { getConfig } from "./state";
-import { titleFromSlug, isCaptchaException } from "./helpers";
+import { titleFromSlug, isCaptchaException, REDIRECT_GATE_MARKER } from "./helpers";
 import { getEpisodeVideoInfo, getSeries, type EpisodeStream } from "./series";
 import { resolveStream, type ResolvedStream } from "./extractors";
 import {
@@ -88,33 +88,42 @@ export function getContentDetails(url: string): PlatformVideoDetails {
 
     const sources: any[] = [];
     const errors: string[] = [];
+    let gatedCount = 0;
     for (const stream of sortStreams(info.streams)) {
         try {
             const resolved = resolveStream(stream.hoster, stream.videoUrl);
             log(`s.to: resolved ${stream.hoster} -> ${resolved.type} ${resolved.url}`);
             sources.push(buildSource(stream, resolved));
         } catch (e) {
-            // A Cloudflare challenge must NOT be swallowed like an ordinary
-            // dead-hoster failure: it has to propagate out of the source method
-            // so Grayjay opens its captcha webview and retries with the
-            // resulting `cf_clearance` cookie. Swallowing it here is what made
-            // the captcha support appear to "not work" on-device.
+            // A genuine Cloudflare challenge (rare on s.to, which uses
+            // DDoS-Guard + a Turnstile gate) is solvable via cf_clearance, so
+            // let it propagate to open Grayjay's captcha webview.
             if (isCaptchaException(e)) {
-                // Re-throw pointing at the EPISODE page (not the dead-end
-                // `/r?t=` stub): Grayjay opens it in the captcha webview where
-                // the s.to Turnstile redirect gate can actually be solved. The
-                // resulting cleared `laravel_session` cookie is then injected
-                // into plugin requests, after which `/r?t=` resolves normally.
-                log(`s.to: redirect gate / captcha required; opening captcha webview at ${url}`);
+                log(`s.to: Cloudflare challenge; opening captcha webview at ${url}`);
                 throw new CaptchaRequiredException(url);
             }
             const msg = `${stream.hoster}: ${e}`;
+            if (String(e).indexOf(REDIRECT_GATE_MARKER) !== -1) {
+                gatedCount++;
+            }
             errors.push(msg);
             log(`s.to: failed to resolve ${msg}`);
         }
     }
 
     if (sources.length === 0) {
+        // Every hoster was blocked by the Turnstile redirect gate: give a clear,
+        // actionable message rather than a generic failure (and rather than an
+        // unsolvable captcha loop). Gating is intermittent, so a retry or a
+        // different episode/hoster often succeeds.
+        if (gatedCount > 0 && gatedCount === errors.length) {
+            throw new ScriptException(
+                `s.to blocked every hoster for this episode behind its ` +
+                    `Cloudflare Turnstile "redirect gate". This is intermittent — ` +
+                    `try again, pick another episode, or open it in a browser. ` +
+                    `(${info.streams.length} hoster link(s), all gated.)`,
+            );
+        }
         throw new ScriptException(
             `No sources could be resolved for ${url}. ` +
                 `Found ${info.streams.length} hoster link(s). ` +

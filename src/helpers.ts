@@ -67,6 +67,10 @@ const CLOUDFLARE_MARKERS = [
     "Enable JavaScript and cookies to continue",
 ];
 
+// Recognizable marker so callers can distinguish "blocked by the Turnstile
+// redirect gate" from an ordinary dead-hoster failure.
+export const REDIRECT_GATE_MARKER = "REDIRECT_GATE";
+
 function isCloudflareChallenge(body: string | undefined): boolean {
     if (!body) return false;
     for (const marker of CLOUDFLARE_MARKERS) {
@@ -171,13 +175,16 @@ export function fetchAndValidate(
             log(`s.to: Cloudflare challenge on 200; throwing CaptchaRequiredException for ${currentUrl}`);
             throw new CaptchaRequiredException(currentUrl, response.body);
         }
-        // Turnstile redirect gate: no usable URL in the body, must be solved.
-        // Throw WITHOUT a body so Grayjay loads the (episode) URL live instead
-        // of rendering this dead-end stub; content.ts re-throws with the real
-        // episode URL so the webview lands somewhere the gate can be solved.
+        // Turnstile redirect gate: the body carries NO hoster URL, only a token
+        // that s.to resolves after a Cloudflare Turnstile is solved in the
+        // parent page. Grayjay's captcha webview can't persist that clearance
+        // (it's a server-side Laravel session established in the POST /r
+        // response, and the post-solve flow leaves the s.to domain), so opening
+        // a captcha here just loops. Surface a recognizable error instead and
+        // let the caller skip this hoster / show a clear message.
         if (gate) {
-            log(`s.to: Turnstile redirect gate detected for ${currentUrl}; throwing CaptchaRequiredException`);
-            throw new CaptchaRequiredException(currentUrl);
+            log(`s.to: Turnstile redirect gate detected for ${currentUrl}`);
+            throw new ScriptException(`${REDIRECT_GATE_MARKER}: ${currentUrl}`);
         }
 
         // Follow redirect stubs (s.to `/r?t=` -> hoster embed URL).

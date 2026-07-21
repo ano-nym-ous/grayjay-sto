@@ -80,6 +80,7 @@
     "challenges.cloudflare.com",
     "Enable JavaScript and cookies to continue"
   ];
+  var REDIRECT_GATE_MARKER = "REDIRECT_GATE";
   function isCloudflareChallenge(body) {
     if (!body) return false;
     for (const marker of CLOUDFLARE_MARKERS) {
@@ -141,8 +142,8 @@
         throw new CaptchaRequiredException(currentUrl, response.body);
       }
       if (gate) {
-        log(`s.to: Turnstile redirect gate detected for ${currentUrl}; throwing CaptchaRequiredException`);
-        throw new CaptchaRequiredException(currentUrl);
+        log(`s.to: Turnstile redirect gate detected for ${currentUrl}`);
+        throw new ScriptException(`${REDIRECT_GATE_MARKER}: ${currentUrl}`);
       }
       const nextUrl = findMetaRefreshUrl(response.body) || findLocationHeader(response.headers);
       if (nextUrl && nextUrl !== currentUrl) {
@@ -869,6 +870,7 @@
     log(`s.to getContentDetails(${slug} s${season}e${episode}): ${info.streams.length} hoster link(s): ${found}`);
     const sources = [];
     const errors = [];
+    let gatedCount = 0;
     for (const stream of sortStreams(info.streams)) {
       try {
         const resolved = resolveStream(stream.hoster, stream.videoUrl);
@@ -876,15 +878,23 @@
         sources.push(buildSource(stream, resolved));
       } catch (e) {
         if (isCaptchaException(e)) {
-          log(`s.to: redirect gate / captcha required; opening captcha webview at ${url}`);
+          log(`s.to: Cloudflare challenge; opening captcha webview at ${url}`);
           throw new CaptchaRequiredException(url);
         }
         const msg = `${stream.hoster}: ${e}`;
+        if (String(e).indexOf(REDIRECT_GATE_MARKER) !== -1) {
+          gatedCount++;
+        }
         errors.push(msg);
         log(`s.to: failed to resolve ${msg}`);
       }
     }
     if (sources.length === 0) {
+      if (gatedCount > 0 && gatedCount === errors.length) {
+        throw new ScriptException(
+          `s.to blocked every hoster for this episode behind its Cloudflare Turnstile "redirect gate". This is intermittent \u2014 try again, pick another episode, or open it in a browser. (${info.streams.length} hoster link(s), all gated.)`
+        );
+      }
       throw new ScriptException(
         `No sources could be resolved for ${url}. Found ${info.streams.length} hoster link(s). ` + (errors.length ? `Errors: ${errors.join(" | ")}` : `No hoster links were found on the episode page.`)
       );
