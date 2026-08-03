@@ -506,8 +506,14 @@
       return m[1];
     }
   }
-  function buildCaptchaHtml(origin, playToken, csrfToken, sitekey, doneCookie) {
-    const cfg = JSON.stringify({ origin, playToken, csrfToken, doneCookie });
+  function buildCaptchaHtml(origin, episodeUrl2, fallbackToken, fallbackSitekey, doneCookie) {
+    const cfg = JSON.stringify({
+      origin,
+      episodeUrl: episodeUrl2,
+      fallbackToken,
+      fallbackSitekey,
+      doneCookie
+    });
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -520,7 +526,8 @@
   .wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;
     justify-content:center;gap:18px;padding:24px;text-align:center}
   h1{font-size:18px;font-weight:600;margin:0}
-  #status{font-size:14px;color:#9aa0a6;min-height:20px}
+  #status{font-size:13px;color:#9aa0a6;min-height:18px;max-width:90%;
+    word-break:break-word}
   .err{color:#f28b82}
   .ok{color:#81c995}
 </style>
@@ -528,67 +535,125 @@
 <body>
 <div class="wrap">
   <h1>Verify to continue</h1>
-  <div id="ts" class="cf-turnstile" data-sitekey="${sitekey}" data-theme="dark" data-callback="onCaptchaSolved"></div>
-  <div id="status">Complete the checkbox above.</div>
+  <div id="ts"></div>
+  <div id="status">Loading\u2026</div>
 </div>
 <script>
 (function(){
   var CFG = ${cfg};
+  var csrf = CFG.fallbackToken || '';
+  var sitekey = CFG.fallbackSitekey || '';
+  var playToken = '';
+  var widgetId = null;
+
   function setStatus(t, cls){
     var el = document.getElementById('status');
     if(!el) return;
     el.textContent = t;
     el.className = cls || '';
   }
-  // Fire a same-origin request AFTER clearance so Grayjay's request-time cookie
-  // capture grabs the cleared laravel_session + our marker cookie.
-  function finish(){
-    document.cookie = CFG.doneCookie + '=1; path=/';
-    var ping = CFG.origin + '/r?gjdone=' + Date.now();
-    fetch(ping, { credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-      .catch(function(){})
-      .then(function(){ setStatus('Verified. You can close this window.', 'ok'); });
+
+  // Wipe the marker cookie up-front so a stale value can never auto-complete
+  // the captcha before a fresh POST clears the session.
+  document.cookie = CFG.doneCookie + '=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+
+  function decodeEntities(s){
+    return (s||'').replace(/&amp;/g,'&');
   }
-  window.onCaptchaSolved = function(token){
+  function extract(html){
+    var m = html.match(/<meta[^>]*name=["']csrf-token["'][^>]*content=["']([^"']+)["']/i)
+         || html.match(/name=["']_token["'][^>]*value=["']([^"']+)["']/i);
+    if(m) csrf = m[1];
+    var s = html.match(/data-turnstile-sitekey=["']([^"']+)["']/i);
+    if(s) sitekey = s[1];
+    var p = html.match(/data-play-url=["'][^"']*[?&]t=([^"'&]+)/i);
+    if(p){
+      try { playToken = decodeURIComponent(decodeEntities(p[1])); }
+      catch(e){ playToken = decodeEntities(p[1]); }
+    }
+    if(!playToken && CFG.fallbackToken) playToken = CFG.fallbackToken;
+  }
+
+  function renderWidget(){
+    if(widgetId !== null) return;
+    if(!(window.turnstile && sitekey)) return;
+    setStatus('Complete the checkbox above.');
+    widgetId = window.turnstile.render('#ts', {
+      sitekey: sitekey,
+      theme: 'dark',
+      callback: onSolve
+    });
+  }
+
+  function onSolve(token){
     setStatus('Verifying\\u2026');
-    var body = '_token=' + encodeURIComponent(CFG.csrfToken)
-      + '&t=' + encodeURIComponent(CFG.playToken)
+    var body = '_token=' + encodeURIComponent(csrf)
+      + '&t=' + encodeURIComponent(playToken)
       + '&cf-turnstile-response=' + encodeURIComponent(token);
-    // POST /r ourselves. Its RESPONSE sets the cleared laravel_session.
     fetch(CFG.origin + '/r', {
       method: 'POST',
       credentials: 'include',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'X-Requested-With': 'XMLHttpRequest'
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': CFG.episodeUrl
       },
       body: body
-    }).then(function(){ finish(); })
+    }).then(function(r){ return r.text().then(function(){ return r; }); })
+      .then(function(){ finish(); })
       .catch(function(){ finish(); });
-  };
+  }
+
+  // After the session is cleared: set the marker cookie, then make a same-origin
+  // request so Grayjay's request-time capture grabs the cleared laravel_session.
+  function finish(){
+    document.cookie = CFG.doneCookie + '=1; path=/';
+    fetch(CFG.origin + '/r?gjdone=' + Date.now(), {
+      credentials: 'include',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    }).catch(function(){}).then(function(){
+      setStatus('Verified. You can close this window.', 'ok');
+    });
+  }
+
+  // Fetch the episode page in the WEBVIEW to get a session-consistent CSRF
+  // token, sitekey and play token, then render the widget.
+  fetch(CFG.episodeUrl, { credentials: 'include' })
+    .then(function(r){ return r.text(); })
+    .then(function(html){ extract(html); })
+    .catch(function(){ /* fall back to embedded values */ })
+    .then(function(){
+      if(!playToken) playToken = CFG.fallbackToken || '';
+      renderWidget();
+      // In case the Turnstile script loads after this point, poll briefly.
+      var tries = 0;
+      var iv = setInterval(function(){
+        tries++;
+        if(widgetId !== null || tries > 100){ clearInterval(iv); return; }
+        renderWidget();
+      }, 100);
+    });
 })();
 <\/script>
 </body>
 </html>`;
   }
-  function throwTurnstileCaptcha(gatedUrl, csrfToken, sitekey) {
-    const playToken = playTokenOf(gatedUrl);
+  function throwTurnstileCaptcha(episodeUrl2, gatedUrl, sitekey) {
+    const origin = originOf(gatedUrl || episodeUrl2);
+    const fallbackToken = playTokenOf(gatedUrl);
     const key = sitekey || TURNSTILE_SITEKEY_FALLBACK;
-    if (!playToken || !csrfToken || !key) {
+    if (!origin || !episodeUrl2) {
       return false;
     }
-    const origin = originOf(gatedUrl);
     const html = buildCaptchaHtml(
       origin,
-      playToken,
-      csrfToken,
+      episodeUrl2,
+      fallbackToken,
       key,
       CAPTCHA_DONE_COOKIE
     );
-    log(
-      `s.to: opening Turnstile captcha webview (origin=${origin}, sitekey=${key})`
-    );
-    throw new CaptchaRequiredException(`${origin}/`, html);
+    log(`s.to: opening Turnstile captcha webview (origin=${origin})`);
+    throw new CaptchaRequiredException(episodeUrl2, html);
   }
 
   // src/extractors.ts
@@ -1001,15 +1066,11 @@
     if (sources.length === 0) {
       if (gatedCount > 0) {
         log(
-          `s.to: ${gatedCount}/${info.streams.length} hoster(s) gated by Turnstile; attempting captcha (csrf=${info.csrfToken ? "yes" : "no"}, sitekey=${info.turnstileSitekey ? "yes" : "no"})`
+          `s.to: ${gatedCount}/${info.streams.length} hoster(s) gated by Turnstile; opening captcha (sitekey=${info.turnstileSitekey ? "scraped" : "fallback"})`
         );
-        throwTurnstileCaptcha(
-          gatedUrl,
-          info.csrfToken,
-          info.turnstileSitekey
-        );
+        throwTurnstileCaptcha(url, gatedUrl, info.turnstileSitekey);
         throw new ScriptException(
-          `s.to blocked this episode behind its Cloudflare Turnstile "redirect gate", and the verification page could not be built (missing CSRF token / sitekey). Try again or open it in a browser. (${info.streams.length} hoster link(s), ${gatedCount} gated.)`
+          `s.to blocked this episode behind its Cloudflare Turnstile "redirect gate" and the verification page could not be opened. Try again or open it in a browser. (${info.streams.length} hoster link(s), ${gatedCount} gated.)`
         );
       }
       throw new ScriptException(

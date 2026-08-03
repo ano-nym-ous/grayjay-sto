@@ -116,29 +116,23 @@ export function getContentDetails(url: string): PlatformVideoDetails {
 
     if (sources.length === 0) {
         // At least one hoster is behind s.to's Turnstile "redirect gate": open
-        // our self-hosted Turnstile solver in Grayjay's captcha webview. Once
-        // solved, the cleared session cookie is captured and this call is
-        // retried with the gate open. Non-gate failures (e.g. an unsupported
-        // placeholder hoster) don't block this: clearing the gate lets the real
-        // hosters resolve on retry. Falls through to a clear message if we lack
-        // the CSRF token / sitekey needed to build the solver.
+        // our self-hosted Turnstile solver in Grayjay's captcha webview. It
+        // fetches a session-consistent CSRF token itself, so once solved the
+        // cleared session cookie is captured and this call is retried with the
+        // gate open. Non-gate failures (e.g. an unsupported placeholder hoster)
+        // don't block this: clearing the gate lets the real hosters resolve on
+        // retry.
         if (gatedCount > 0) {
             log(
                 `s.to: ${gatedCount}/${info.streams.length} hoster(s) gated by ` +
-                    `Turnstile; attempting captcha (csrf=${info.csrfToken ? "yes" : "no"}, ` +
-                    `sitekey=${info.turnstileSitekey ? "yes" : "no"})`,
+                    `Turnstile; opening captcha (sitekey=${info.turnstileSitekey ? "scraped" : "fallback"})`,
             );
-            throwTurnstileCaptcha(
-                gatedUrl,
-                info.csrfToken,
-                info.turnstileSitekey,
-            );
+            throwTurnstileCaptcha(url, gatedUrl, info.turnstileSitekey);
             throw new ScriptException(
                 `s.to blocked this episode behind its Cloudflare Turnstile ` +
-                    `"redirect gate", and the verification page could not be ` +
-                    `built (missing CSRF token / sitekey). Try again or open it ` +
-                    `in a browser. (${info.streams.length} hoster link(s), ` +
-                    `${gatedCount} gated.)`,
+                    `"redirect gate" and the verification page could not be ` +
+                    `opened. Try again or open it in a browser. ` +
+                    `(${info.streams.length} hoster link(s), ${gatedCount} gated.)`,
             );
         }
         throw new ScriptException(
