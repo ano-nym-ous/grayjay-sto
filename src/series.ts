@@ -205,6 +205,10 @@ export interface EpisodeVideoInfo {
     originalTitle: string;
     description: string;
     streams: EpisodeStream[];
+    // Values needed to solve s.to's Turnstile "redirect gate" in a webview:
+    // the Laravel CSRF token (posted as `_token`) and the Turnstile sitekey.
+    csrfToken: string;
+    turnstileSitekey: string;
 }
 
 export function getEpisodeVideoInfo(
@@ -226,6 +230,19 @@ export function getEpisodeVideoInfo(
 
     const titleMatch = fullTitle.match(/(.*?)(?:\s*\(([^()]*)\))?\s*$/);
 
+    const csrfToken =
+        root
+            .querySelector('meta[name="csrf-token"]')
+            ?.getAttribute("content") ||
+        root
+            .querySelector('#player-prepare-form input[name="_token"]')
+            ?.getAttribute("value") ||
+        "";
+    const turnstileSitekey =
+        root
+            .querySelector("#episode-redirect-gate-root")
+            ?.getAttribute("data-turnstile-sitekey") || "";
+
     return {
         number: parseInt(currentInfo.match(/E(\d+)/)?.[1] || "0"),
         season: currentInfo.includes("S00")
@@ -244,6 +261,8 @@ export function getEpisodeVideoInfo(
                 languageRef:
                     node.querySelector("use")?.getAttribute("href") || "",
             })),
+        csrfToken,
+        turnstileSitekey,
     };
 }
 

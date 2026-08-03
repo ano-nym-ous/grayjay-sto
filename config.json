@@ -7,7 +7,7 @@
   "sourceUrl": "https://raw.githubusercontent.com/ano-nym-ous/grayjay-sto/refs/heads/main/config.json",
   "repositoryUrl": "https://raw.githubusercontent.com/ano-nym-ous/grayjay-sto",
   "scriptUrl": "./dist/script.js",
-  "version": 5,
+  "version": 6,
   "iconUrl": "./icon.png",
   "id": "984f2a8e-bd06-4d2b-84c7-db37f786672b",
   "packages": ["Http", "DOMParser"],
@@ -42,7 +42,7 @@
   "captcha": {
     "userAgent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
     "captchaUrl": null,
-    "completionUrl": "https://serienstream.to/r",
+    "completionUrl": "https://serienstream.to/r?gjcaptcha=done",
     "cookiesToFind": ["laravel_session"],
     "cookiesExclOthers": false
   }

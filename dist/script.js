@@ -13,6 +13,8 @@
   var USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36";
   var HOSTER_ORDER = ["VOE", "Vidoza", "Streamtape", "Doodstream"];
   var DOODSTREAM_HOST = "https://dood.li";
+  var CAPTCHA_COMPLETION_URL = "https://serienstream.to/r?gjcaptcha=done";
+  var TURNSTILE_SITEKEY_FALLBACK = "0x4AAAAAAAFBfchmT6XFij7y";
 
   // src/state.ts
   var _config = null;
@@ -269,7 +271,7 @@
     });
   }
   function getEpisodeVideoInfo(slug, number, season) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
     const root = getHtmlRoot(
       `${getSite()}/${slug}/staffel-${season}/episode-${number}`
     );
@@ -277,12 +279,14 @@
     const fullTitle = rawTitle.replace(/^S\d+E\d+:\s*/i, "");
     const currentInfo = ((_d = (_c = root.querySelector("div.small.mx-2 span strong")) == null ? void 0 : _c.textContent) == null ? void 0 : _d.trim()) || "";
     const titleMatch = fullTitle.match(/(.*?)(?:\s*\(([^()]*)\))?\s*$/);
+    const csrfToken = ((_e = root.querySelector('meta[name="csrf-token"]')) == null ? void 0 : _e.getAttribute("content")) || ((_f = root.querySelector('#player-prepare-form input[name="_token"]')) == null ? void 0 : _f.getAttribute("value")) || "";
+    const turnstileSitekey = ((_g = root.querySelector("#episode-redirect-gate-root")) == null ? void 0 : _g.getAttribute("data-turnstile-sitekey")) || "";
     return {
-      number: parseInt(((_e = currentInfo.match(/E(\d+)/)) == null ? void 0 : _e[1]) || "0"),
-      season: currentInfo.includes("S00") ? null : parseInt(((_f = currentInfo.match(/S(\d+)/)) == null ? void 0 : _f[1]) || "0"),
+      number: parseInt(((_h = currentInfo.match(/E(\d+)/)) == null ? void 0 : _h[1]) || "0"),
+      season: currentInfo.includes("S00") ? null : parseInt(((_i = currentInfo.match(/S(\d+)/)) == null ? void 0 : _i[1]) || "0"),
       title: (titleMatch == null ? void 0 : titleMatch[1]) || "",
       originalTitle: (titleMatch == null ? void 0 : titleMatch[2]) || "",
-      description: ((_h = (_g = root.querySelector("div[id^='desc-'] div")) == null ? void 0 : _g.textContent) == null ? void 0 : _h.trim()) || "",
+      description: ((_k = (_j = root.querySelector("div[id^='desc-'] div")) == null ? void 0 : _j.textContent) == null ? void 0 : _k.trim()) || "",
       streams: root.querySelectorAll("div#episode-links button.link-box").map((node) => {
         var _a2;
         return {
@@ -290,7 +294,9 @@
           hoster: node.getAttribute("data-provider-name") || "",
           languageRef: ((_a2 = node.querySelector("use")) == null ? void 0 : _a2.getAttribute("href")) || ""
         };
-      })
+      }),
+      csrfToken,
+      turnstileSitekey
     };
   }
 
@@ -482,6 +488,116 @@
       );
     }
     return new PlaylistPager(playlists, false, {});
+  }
+
+  // src/captcha.ts
+  function originOf(url) {
+    const m = url.match(/^(https?:\/\/[^/]+)/i);
+    return m ? m[1] : "https://serienstream.to";
+  }
+  function playTokenOf(url) {
+    const m = url.match(/[?&]t=([^&]+)/);
+    if (!m) return "";
+    try {
+      return decodeURIComponent(m[1]);
+    } catch {
+      return m[1];
+    }
+  }
+  function buildCaptchaHtml(origin, playToken, csrfToken, sitekey, completionUrl) {
+    const cfg = JSON.stringify({
+      origin,
+      playToken,
+      csrfToken,
+      completionUrl
+    });
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer><\/script>
+<style>
+  html,body{margin:0;height:100%;background:#0f0f10;color:#eee;
+    font-family:-apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:18px;padding:24px;text-align:center}
+  h1{font-size:18px;font-weight:600;margin:0}
+  #status{font-size:14px;color:#9aa0a6;min-height:20px}
+  .err{color:#f28b82}
+  .ok{color:#81c995}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Verify to continue</h1>
+  <div id="ts" class="cf-turnstile" data-sitekey="${sitekey}" data-theme="dark" data-callback="onCaptchaSolved"></div>
+  <div id="status">Complete the checkbox above.</div>
+</div>
+<script>
+(function(){
+  var CFG = ${cfg};
+  function setStatus(t, cls){
+    var el = document.getElementById('status');
+    if(!el) return;
+    el.textContent = t;
+    el.className = cls || '';
+  }
+  window.onCaptchaSolved = function(token){
+    setStatus('Verifying\\u2026');
+    var body = '_token=' + encodeURIComponent(CFG.csrfToken)
+      + '&t=' + encodeURIComponent(CFG.playToken)
+      + '&cf-turnstile-response=' + encodeURIComponent(token);
+    // 1) POST /r ourselves. Its RESPONSE sets the cleared laravel_session.
+    fetch(CFG.origin + '/r', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: body
+    }).then(function(){
+      // 2) Now that the session is cleared, ping the sentinel so Grayjay's
+      //    request-time cookie capture grabs the CLEARED cookie.
+      return fetch(CFG.completionUrl, {
+        credentials: 'include',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+    }).then(function(){
+      setStatus('Verified. You can close this window.', 'ok');
+    }).catch(function(e){
+      // Even on error, try the sentinel: the POST may have cleared the session
+      // before the fetch chain threw (e.g. an opaque redirect).
+      try {
+        fetch(CFG.completionUrl, { credentials: 'include' });
+      } catch (ignored) {}
+      setStatus('Error: ' + e + ' (you may retry)', 'err');
+    });
+  };
+})();
+<\/script>
+</body>
+</html>`;
+  }
+  function throwTurnstileCaptcha(gatedUrl, csrfToken, sitekey) {
+    const playToken = playTokenOf(gatedUrl);
+    const key = sitekey || TURNSTILE_SITEKEY_FALLBACK;
+    if (!playToken || !csrfToken || !key) {
+      return false;
+    }
+    const origin = originOf(gatedUrl);
+    const html = buildCaptchaHtml(
+      origin,
+      playToken,
+      csrfToken,
+      key,
+      CAPTCHA_COMPLETION_URL
+    );
+    log(
+      `s.to: opening Turnstile captcha webview (origin=${origin}, sitekey=${key}, completion=${CAPTCHA_COMPLETION_URL})`
+    );
+    throw new CaptchaRequiredException(`${origin}/`, html);
   }
 
   // src/extractors.ts
@@ -871,6 +987,7 @@
     const sources = [];
     const errors = [];
     let gatedCount = 0;
+    let gatedUrl = "";
     for (const stream of sortStreams(info.streams)) {
       try {
         const resolved = resolveStream(stream.hoster, stream.videoUrl);
@@ -884,6 +1001,7 @@
         const msg = `${stream.hoster}: ${e}`;
         if (String(e).indexOf(REDIRECT_GATE_MARKER) !== -1) {
           gatedCount++;
+          if (!gatedUrl) gatedUrl = stream.videoUrl;
         }
         errors.push(msg);
         log(`s.to: failed to resolve ${msg}`);
@@ -891,8 +1009,16 @@
     }
     if (sources.length === 0) {
       if (gatedCount > 0 && gatedCount === errors.length) {
+        log(
+          `s.to: all ${info.streams.length} hoster(s) gated by Turnstile; attempting captcha (csrf=${info.csrfToken ? "yes" : "no"}, sitekey=${info.turnstileSitekey ? "yes" : "no"})`
+        );
+        throwTurnstileCaptcha(
+          gatedUrl,
+          info.csrfToken,
+          info.turnstileSitekey
+        );
         throw new ScriptException(
-          `s.to blocked every hoster for this episode behind its Cloudflare Turnstile "redirect gate". This is intermittent \u2014 try again, pick another episode, or open it in a browser. (${info.streams.length} hoster link(s), all gated.)`
+          `s.to blocked every hoster for this episode behind its Cloudflare Turnstile "redirect gate", and the verification page could not be built (missing CSRF token / sitekey). Try again or open it in a browser. (${info.streams.length} hoster link(s), all gated.)`
         );
       }
       throw new ScriptException(
