@@ -6,17 +6,23 @@
 //     hoster URL. The gate clears only after the site's modal POSTs `/r` with
 //     `_token` (CSRF) + `t` (play token) + `cf-turnstile-response`; clearance
 //     lives in the server-side Laravel session (the POST *response* sets it).
-//   * Grayjay's captcha webview captures cookies at REQUEST time and completes
-//     the instant a request whose URL EXACTLY equals `completionUrl` fires. The
-//     site's own form POSTs to `/r`, so pointing completion at `/r` captures the
-//     pre-clearance session -> an unsolvable loop (which is what users hit).
+//   * Grayjay's captcha webview captures cookies at REQUEST time. It completes
+//     when a request satisfies `completionUrl` AND all `cookiesToFind` are
+//     present at that moment. The site's own form POSTs to `/r`, so pointing
+//     `completionUrl` at `/r` captures the PRE-clearance session -> an
+//     unsolvable loop (which is exactly what users hit).
 //
 // Fix: inject our OWN page as the captcha body. It renders a Turnstile widget,
 // POSTs `/r` itself, and only AFTER that response clears the session does it
-// ping a unique sentinel URL (CAPTCHA_COMPLETION_URL). Grayjay then captures the
-// cleared `laravel_session` and re-runs getContentDetails with it applied.
+//   (a) set a marker cookie (CAPTCHA_DONE_COOKIE), then
+//   (b) fire a same-origin request.
+// config.json uses `completionUrl: null` (so any request qualifies) and requires
+// both `laravel_session` and the marker cookie. Because the marker only exists
+// after we set it, completion fires strictly AFTER clearance -> Grayjay captures
+// the CLEARED `laravel_session`. This is domain-agnostic: it works on whatever
+// origin the gated link lives on (s.to / serienstream.to / .cx / aniworld.to).
 
-import { CAPTCHA_COMPLETION_URL, TURNSTILE_SITEKEY_FALLBACK } from "./constants";
+import { CAPTCHA_DONE_COOKIE, TURNSTILE_SITEKEY_FALLBACK } from "./constants";
 
 // Origin ("https://host") of an absolute URL.
 function originOf(url: string): string {
@@ -42,14 +48,9 @@ function buildCaptchaHtml(
     playToken: string,
     csrfToken: string,
     sitekey: string,
-    completionUrl: string,
+    doneCookie: string,
 ): string {
-    const cfg = JSON.stringify({
-        origin,
-        playToken,
-        csrfToken,
-        completionUrl,
-    });
+    const cfg = JSON.stringify({ origin, playToken, csrfToken, doneCookie });
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -82,12 +83,21 @@ function buildCaptchaHtml(
     el.textContent = t;
     el.className = cls || '';
   }
+  // Fire a same-origin request AFTER clearance so Grayjay's request-time cookie
+  // capture grabs the cleared laravel_session + our marker cookie.
+  function finish(){
+    document.cookie = CFG.doneCookie + '=1; path=/';
+    var ping = CFG.origin + '/r?gjdone=' + Date.now();
+    fetch(ping, { credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .catch(function(){})
+      .then(function(){ setStatus('Verified. You can close this window.', 'ok'); });
+  }
   window.onCaptchaSolved = function(token){
     setStatus('Verifying\\u2026');
     var body = '_token=' + encodeURIComponent(CFG.csrfToken)
       + '&t=' + encodeURIComponent(CFG.playToken)
       + '&cf-turnstile-response=' + encodeURIComponent(token);
-    // 1) POST /r ourselves. Its RESPONSE sets the cleared laravel_session.
+    // POST /r ourselves. Its RESPONSE sets the cleared laravel_session.
     fetch(CFG.origin + '/r', {
       method: 'POST',
       credentials: 'include',
@@ -96,23 +106,8 @@ function buildCaptchaHtml(
         'X-Requested-With': 'XMLHttpRequest'
       },
       body: body
-    }).then(function(){
-      // 2) Now that the session is cleared, ping the sentinel so Grayjay's
-      //    request-time cookie capture grabs the CLEARED cookie.
-      return fetch(CFG.completionUrl, {
-        credentials: 'include',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-      });
-    }).then(function(){
-      setStatus('Verified. You can close this window.', 'ok');
-    }).catch(function(e){
-      // Even on error, try the sentinel: the POST may have cleared the session
-      // before the fetch chain threw (e.g. an opaque redirect).
-      try {
-        fetch(CFG.completionUrl, { credentials: 'include' });
-      } catch (ignored) {}
-      setStatus('Error: ' + e + ' (you may retry)', 'err');
-    });
+    }).then(function(){ finish(); })
+      .catch(function(){ finish(); });
   };
 })();
 </script>
@@ -122,8 +117,8 @@ function buildCaptchaHtml(
 
 // Throw Grayjay's CaptchaRequiredException carrying our custom Turnstile page.
 // `gatedUrl` is any of the gated `/r?t=<token>` hoster URLs for this episode.
-// Returns nothing (always throws) when it has enough info; otherwise returns
-// false so the caller can fall back to a plain error.
+// Returns false (does NOT throw) when it lacks the info to build a solver, so
+// the caller can fall back to a plain error.
 export function throwTurnstileCaptcha(
     gatedUrl: string,
     csrfToken: string,
@@ -141,15 +136,15 @@ export function throwTurnstileCaptcha(
         playToken,
         csrfToken,
         key,
-        CAPTCHA_COMPLETION_URL,
+        CAPTCHA_DONE_COOKIE,
     );
 
     log(
         `s.to: opening Turnstile captcha webview (origin=${origin}, ` +
-            `sitekey=${key}, completion=${CAPTCHA_COMPLETION_URL})`,
+            `sitekey=${key})`,
     );
     // baseURL = origin so the webview's document origin is the site (Turnstile
-    // validates the sitekey against location.hostname, and our fetches are
-    // same-origin with cookies).
+    // validates the sitekey against location.hostname, and our fetches +
+    // document.cookie are same-origin with the gated links' cookies).
     throw new CaptchaRequiredException(`${origin}/`, html);
 }

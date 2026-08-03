@@ -13,7 +13,7 @@
   var USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36";
   var HOSTER_ORDER = ["VOE", "Vidoza", "Streamtape", "Doodstream"];
   var DOODSTREAM_HOST = "https://dood.li";
-  var CAPTCHA_COMPLETION_URL = "https://serienstream.to/r?gjcaptcha=done";
+  var CAPTCHA_DONE_COOKIE = "gjdone";
   var TURNSTILE_SITEKEY_FALLBACK = "0x4AAAAAAAFBfchmT6XFij7y";
 
   // src/state.ts
@@ -294,7 +294,9 @@
           hoster: node.getAttribute("data-provider-name") || "",
           languageRef: ((_a2 = node.querySelector("use")) == null ? void 0 : _a2.getAttribute("href")) || ""
         };
-      }),
+      }).filter(
+        (s) => !!s.videoUrl && s.hoster.toLowerCase() !== "provider"
+      ),
       csrfToken,
       turnstileSitekey
     };
@@ -504,13 +506,8 @@
       return m[1];
     }
   }
-  function buildCaptchaHtml(origin, playToken, csrfToken, sitekey, completionUrl) {
-    const cfg = JSON.stringify({
-      origin,
-      playToken,
-      csrfToken,
-      completionUrl
-    });
+  function buildCaptchaHtml(origin, playToken, csrfToken, sitekey, doneCookie) {
+    const cfg = JSON.stringify({ origin, playToken, csrfToken, doneCookie });
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -543,12 +540,21 @@
     el.textContent = t;
     el.className = cls || '';
   }
+  // Fire a same-origin request AFTER clearance so Grayjay's request-time cookie
+  // capture grabs the cleared laravel_session + our marker cookie.
+  function finish(){
+    document.cookie = CFG.doneCookie + '=1; path=/';
+    var ping = CFG.origin + '/r?gjdone=' + Date.now();
+    fetch(ping, { credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .catch(function(){})
+      .then(function(){ setStatus('Verified. You can close this window.', 'ok'); });
+  }
   window.onCaptchaSolved = function(token){
     setStatus('Verifying\\u2026');
     var body = '_token=' + encodeURIComponent(CFG.csrfToken)
       + '&t=' + encodeURIComponent(CFG.playToken)
       + '&cf-turnstile-response=' + encodeURIComponent(token);
-    // 1) POST /r ourselves. Its RESPONSE sets the cleared laravel_session.
+    // POST /r ourselves. Its RESPONSE sets the cleared laravel_session.
     fetch(CFG.origin + '/r', {
       method: 'POST',
       credentials: 'include',
@@ -557,23 +563,8 @@
         'X-Requested-With': 'XMLHttpRequest'
       },
       body: body
-    }).then(function(){
-      // 2) Now that the session is cleared, ping the sentinel so Grayjay's
-      //    request-time cookie capture grabs the CLEARED cookie.
-      return fetch(CFG.completionUrl, {
-        credentials: 'include',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-      });
-    }).then(function(){
-      setStatus('Verified. You can close this window.', 'ok');
-    }).catch(function(e){
-      // Even on error, try the sentinel: the POST may have cleared the session
-      // before the fetch chain threw (e.g. an opaque redirect).
-      try {
-        fetch(CFG.completionUrl, { credentials: 'include' });
-      } catch (ignored) {}
-      setStatus('Error: ' + e + ' (you may retry)', 'err');
-    });
+    }).then(function(){ finish(); })
+      .catch(function(){ finish(); });
   };
 })();
 <\/script>
@@ -592,10 +583,10 @@
       playToken,
       csrfToken,
       key,
-      CAPTCHA_COMPLETION_URL
+      CAPTCHA_DONE_COOKIE
     );
     log(
-      `s.to: opening Turnstile captcha webview (origin=${origin}, sitekey=${key}, completion=${CAPTCHA_COMPLETION_URL})`
+      `s.to: opening Turnstile captcha webview (origin=${origin}, sitekey=${key})`
     );
     throw new CaptchaRequiredException(`${origin}/`, html);
   }
@@ -1008,9 +999,9 @@
       }
     }
     if (sources.length === 0) {
-      if (gatedCount > 0 && gatedCount === errors.length) {
+      if (gatedCount > 0) {
         log(
-          `s.to: all ${info.streams.length} hoster(s) gated by Turnstile; attempting captcha (csrf=${info.csrfToken ? "yes" : "no"}, sitekey=${info.turnstileSitekey ? "yes" : "no"})`
+          `s.to: ${gatedCount}/${info.streams.length} hoster(s) gated by Turnstile; attempting captcha (csrf=${info.csrfToken ? "yes" : "no"}, sitekey=${info.turnstileSitekey ? "yes" : "no"})`
         );
         throwTurnstileCaptcha(
           gatedUrl,
@@ -1018,7 +1009,7 @@
           info.turnstileSitekey
         );
         throw new ScriptException(
-          `s.to blocked every hoster for this episode behind its Cloudflare Turnstile "redirect gate", and the verification page could not be built (missing CSRF token / sitekey). Try again or open it in a browser. (${info.streams.length} hoster link(s), all gated.)`
+          `s.to blocked this episode behind its Cloudflare Turnstile "redirect gate", and the verification page could not be built (missing CSRF token / sitekey). Try again or open it in a browser. (${info.streams.length} hoster link(s), ${gatedCount} gated.)`
         );
       }
       throw new ScriptException(

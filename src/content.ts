@@ -115,19 +115,17 @@ export function getContentDetails(url: string): PlatformVideoDetails {
     }
 
     if (sources.length === 0) {
-        // Every hoster was blocked by the Turnstile redirect gate: give a clear,
-        // actionable message rather than a generic failure (and rather than an
-        // unsolvable captcha loop). Gating is intermittent, so a retry or a
-        // different episode/hoster often succeeds.
-        if (gatedCount > 0 && gatedCount === errors.length) {
-            // Every hoster is behind s.to's Turnstile "redirect gate". Open our
-            // self-hosted Turnstile solver in Grayjay's captcha webview; once
-            // solved, the cleared session cookie is captured and this call is
-            // retried with the gate open. Falls through to a clear message if
-            // we lack the CSRF token / sitekey needed to build the solver.
+        // At least one hoster is behind s.to's Turnstile "redirect gate": open
+        // our self-hosted Turnstile solver in Grayjay's captcha webview. Once
+        // solved, the cleared session cookie is captured and this call is
+        // retried with the gate open. Non-gate failures (e.g. an unsupported
+        // placeholder hoster) don't block this: clearing the gate lets the real
+        // hosters resolve on retry. Falls through to a clear message if we lack
+        // the CSRF token / sitekey needed to build the solver.
+        if (gatedCount > 0) {
             log(
-                `s.to: all ${info.streams.length} hoster(s) gated by Turnstile; ` +
-                    `attempting captcha (csrf=${info.csrfToken ? "yes" : "no"}, ` +
+                `s.to: ${gatedCount}/${info.streams.length} hoster(s) gated by ` +
+                    `Turnstile; attempting captcha (csrf=${info.csrfToken ? "yes" : "no"}, ` +
                     `sitekey=${info.turnstileSitekey ? "yes" : "no"})`,
             );
             throwTurnstileCaptcha(
@@ -136,11 +134,11 @@ export function getContentDetails(url: string): PlatformVideoDetails {
                 info.turnstileSitekey,
             );
             throw new ScriptException(
-                `s.to blocked every hoster for this episode behind its ` +
-                    `Cloudflare Turnstile "redirect gate", and the verification ` +
-                    `page could not be built (missing CSRF token / sitekey). ` +
-                    `Try again or open it in a browser. ` +
-                    `(${info.streams.length} hoster link(s), all gated.)`,
+                `s.to blocked this episode behind its Cloudflare Turnstile ` +
+                    `"redirect gate", and the verification page could not be ` +
+                    `built (missing CSRF token / sitekey). Try again or open it ` +
+                    `in a browser. (${info.streams.length} hoster link(s), ` +
+                    `${gatedCount} gated.)`,
             );
         }
         throw new ScriptException(

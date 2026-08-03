@@ -260,7 +260,14 @@ export function getEpisodeVideoInfo(
                 hoster: node.getAttribute("data-provider-name") || "",
                 languageRef:
                     node.querySelector("use")?.getAttribute("href") || "",
-            })),
+            }))
+            // Drop the hidden template row (literal placeholder "Provider") and
+            // any entry without a real play URL.
+            .filter(
+                (s) =>
+                    !!s.videoUrl &&
+                    s.hoster.toLowerCase() !== "provider",
+            ),
         csrfToken,
         turnstileSitekey,
     };
