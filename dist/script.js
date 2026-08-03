@@ -1007,6 +1007,12 @@
   function buildSource(stream, resolved) {
     const lang = parseMediaLanguage(stream.languageRef);
     const name = `${stream.hoster} \xB7 ${languageLabel(lang)}`;
+    const requestModifier = {
+      headers: {
+        "User-Agent": USER_AGENT,
+        ...resolved.headers || {}
+      }
+    };
     if (resolved.type === "hls") {
       return {
         plugin_type: "HLSSource",
@@ -1014,7 +1020,8 @@
         duration: 0,
         url: resolved.url,
         priority: false,
-        language: languageCode(lang)
+        language: languageCode(lang),
+        requestModifier
       };
     }
     return {
@@ -1026,7 +1033,8 @@
       container: "video/mp4",
       codec: "",
       bitrate: 0,
-      duration: 0
+      duration: 0,
+      requestModifier
     };
   }
   function getContentDetails(url) {

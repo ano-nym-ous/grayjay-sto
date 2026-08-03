@@ -1,7 +1,7 @@
 // Episode / movie playback: resolve every hoster + language into a switchable
 // list of video sources.
 
-import { HOSTER_ORDER, PLATFORM } from "./constants";
+import { HOSTER_ORDER, PLATFORM, USER_AGENT } from "./constants";
 import { getConfig } from "./state";
 import { titleFromSlug, isCaptchaException, REDIRECT_GATE_MARKER } from "./helpers";
 import { throwTurnstileCaptcha } from "./captcha";
@@ -39,6 +39,17 @@ function buildSource(stream: EpisodeStream, resolved: ResolvedStream): any {
     const lang = parseMediaLanguage(stream.languageRef);
     const name = `${stream.hoster} \u00b7 ${languageLabel(lang)}`;
 
+    // Headers the CDN expects at PLAYBACK time. The hoster CDNs authorize
+    // requests by User-Agent (and some, like Doodstream, by Referer); without
+    // them ExoPlayer gets a 401 ("unauthorized"). Send the same UA we resolved
+    // with, plus any per-hoster headers the extractor produced.
+    const requestModifier = {
+        headers: {
+            "User-Agent": USER_AGENT,
+            ...(resolved.headers || {}),
+        },
+    };
+
     // Build PLAIN objects (not via the injected HLSSource/VideoUrlSource
     // classes). On some Grayjay builds those constructors return ClearScript
     // host objects onto which an added `plugin_type` doesn't round-trip, which
@@ -53,6 +64,7 @@ function buildSource(stream: EpisodeStream, resolved: ResolvedStream): any {
             url: resolved.url,
             priority: false,
             language: languageCode(lang),
+            requestModifier,
         };
     }
 
@@ -66,6 +78,7 @@ function buildSource(stream: EpisodeStream, resolved: ResolvedStream): any {
         codec: "",
         bitrate: 0,
         duration: 0,
+        requestModifier,
     };
 }
 
