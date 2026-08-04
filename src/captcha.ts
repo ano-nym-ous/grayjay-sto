@@ -136,30 +136,40 @@ function buildCaptchaHtml(
     var body = '_token=' + encodeURIComponent(csrf)
       + '&t=' + encodeURIComponent(playToken)
       + '&cf-turnstile-response=' + encodeURIComponent(token);
+    // POST /r to clear the session. Laravel answers 302 either way, so we don't
+    // trust its status; instead we verify by re-fetching the gated link below.
     fetch(CFG.origin + '/r', {
       method: 'POST',
       credentials: 'include',
-      redirect: 'manual',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Referer': CFG.episodeUrl
       },
       body: body
-    }).then(function(r){
-      // status 0 = opaqueredirect (a 3xx we didn't follow) -> treated as success.
-      var ok = (r.status === 0) || (r.status >= 200 && r.status < 400);
-      if(ok){
-        setStatus('Verified (POST /r -> ' + (r.status || '3xx') + '). Finishing\\u2026', 'ok');
-        finish();
-      } else {
-        // Do NOT signal completion on failure: that would capture an uncleared
-        // session and loop. Keep the window open so the code is visible.
-        setStatus('POST /r failed: HTTP ' + r.status
-          + ' \u2014 please tell the developer this number.', 'err');
-      }
-    }).catch(function(e){
-      setStatus('POST /r error: ' + e + ' \u2014 tell the developer.', 'err');
-    });
+    }).then(function(){ verifyCleared(); })
+      .catch(function(e){ setStatus('POST /r error: ' + e, 'err'); });
+  }
+
+  // GET the gated link again: if the session is cleared it no longer returns the
+  // "frameBridge" stub. This request also carries the cleared laravel_session,
+  // so on success we then trip Grayjay's capture via finish().
+  function verifyCleared(){
+    setStatus('Checking\\u2026');
+    fetch(CFG.origin + '/r?t=' + encodeURIComponent(playToken), {
+      credentials: 'include',
+      headers: { 'Referer': CFG.episodeUrl }
+    }).then(function(r){ return r.text(); })
+      .then(function(html){
+        if(html.indexOf('frameBridge') !== -1){
+          // Still gated: the POST did not clear the session. Do NOT finish
+          // (that would loop). Keep the window open so the state is visible.
+          setStatus('Still gated after solving \u2014 POST /r did not clear the '
+            + 'session. Please tell the developer.', 'err');
+        } else {
+          setStatus('Verified. Finishing\\u2026', 'ok');
+          finish();
+        }
+      }).catch(function(e){ setStatus('Verify error: ' + e, 'err'); });
   }
 
   // After the session is cleared: set the marker cookie, then make a same-origin
