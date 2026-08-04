@@ -577,11 +577,14 @@
   function renderWidget(){
     if(widgetId !== null) return;
     if(!(window.turnstile && sitekey)) return;
-    setStatus('Complete the checkbox above.');
+    setStatus('Complete the checkbox above. (csrf=' + (csrf?'ok':'MISSING')
+      + ', t=' + (playToken?'ok':'MISSING') + ')');
     widgetId = window.turnstile.render('#ts', {
       sitekey: sitekey,
       theme: 'dark',
-      callback: onSolve
+      callback: onSolve,
+      'error-callback': function(c){ setStatus('Turnstile error: ' + c, 'err'); },
+      'expired-callback': function(){ setStatus('Turnstile expired, tick again.', 'err'); }
     });
   }
 
@@ -593,15 +596,27 @@
     fetch(CFG.origin + '/r', {
       method: 'POST',
       credentials: 'include',
+      redirect: 'manual',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'X-Requested-With': 'XMLHttpRequest',
         'Referer': CFG.episodeUrl
       },
       body: body
-    }).then(function(r){ return r.text().then(function(){ return r; }); })
-      .then(function(){ finish(); })
-      .catch(function(){ finish(); });
+    }).then(function(r){
+      // status 0 = opaqueredirect (a 3xx we didn't follow) -> treated as success.
+      var ok = (r.status === 0) || (r.status >= 200 && r.status < 400);
+      if(ok){
+        setStatus('Verified (POST /r -> ' + (r.status || '3xx') + '). Finishing\\u2026', 'ok');
+        finish();
+      } else {
+        // Do NOT signal completion on failure: that would capture an uncleared
+        // session and loop. Keep the window open so the code is visible.
+        setStatus('POST /r failed: HTTP ' + r.status
+          + ' \u2014 please tell the developer this number.', 'err');
+      }
+    }).catch(function(e){
+      setStatus('POST /r error: ' + e + ' \u2014 tell the developer.', 'err');
+    });
   }
 
   // After the session is cleared: set the marker cookie, then make a same-origin
